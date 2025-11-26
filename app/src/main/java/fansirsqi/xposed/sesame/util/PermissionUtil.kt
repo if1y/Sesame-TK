@@ -116,13 +116,13 @@ object PermissionUtil {
      *
      * @return 如果权限被授予，返回true，否则返回false。
      */
-    @JvmStatic
+   /**  @JvmStatic
     fun checkBatteryPermissions(): Boolean {
         val context: Context = contextSafely ?: return false
         // 检查是否被豁免电池优化
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager?
         return powerManager != null && powerManager.isIgnoringBatteryOptimizations(General.PACKAGE_NAME)
-    }
+    }*/
 
     /**
      * 检查电池优化豁免权限，但不再直接请求该权限，以符合Google Play政策。
@@ -130,7 +130,7 @@ object PermissionUtil {
      * @param context 发起检查请求的上下文。
      * @return 如果权限被授予，返回true，否则返回false。
      */
-    @JvmStatic
+    /** @JvmStatic
     fun checkOrRequestBatteryPermissions(context: Context): Boolean {
         // 我们不再请求电池优化豁免权限，符合Google Play政策
         try {
@@ -155,7 +155,7 @@ object PermissionUtil {
             Log.printStackTrace(TAG, e)
         }
         return false
-    }
+    }*/
 
     /**
      * 安全启动Activity的方法，处理启动失败的异常。
