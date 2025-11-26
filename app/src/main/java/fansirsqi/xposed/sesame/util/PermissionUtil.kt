@@ -133,7 +133,7 @@ object PermissionUtil {
      @JvmStatic
     fun checkOrRequestBatteryPermissions(context: Context): Boolean {
         // 我们不再请求电池优化豁免权限，符合Google Play政策
-       /** try {
+        /**try {
             if (checkBatteryPermissions()) {
                 return true
             }
@@ -153,8 +153,8 @@ object PermissionUtil {
             }
         } catch (e: Exception) {
             Log.printStackTrace(TAG, e)
-        }
-        return false  */
+        }*/
+        return false
     }
 
     /**
