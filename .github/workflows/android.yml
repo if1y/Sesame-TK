@@ -58,216 +58,32 @@ jobs:
           echo "x86_64_apk=$x86_64_apk" >> $GITHUB_OUTPUT
           echo "universal_apk=$universal_apk" >> $GITHUB_OUTPUT
 
-      - name: ⏳ Copy APKs to staging for signing
-        run: |
-          mkdir -p app/build/outputs/apk/all
-          cp "${{ steps.locate_apks.outputs.arm64_apk }}" app/build/outputs/apk/all/
-          cp "${{ steps.locate_apks.outputs.armv7_apk }}" app/build/outputs/apk/all/
-          cp "${{ steps.locate_apks.outputs.x86_apk }}" app/build/outputs/apk/all/
-          cp "${{ steps.locate_apks.outputs.x86_64_apk }}" app/build/outputs/apk/all/
-          cp "${{ steps.locate_apks.outputs.universal_apk }}" app/build/outputs/apk/all/
-
-      - name: 🔐 Sign APKs
-        id: sign_apks
-        uses: ilharp/sign-android-release@v2
-        with:
-          releaseDir: app/build/outputs/apk/all
-          signingKey: ${{ secrets.ANDROID_SIGNING_KEY }}
-          keyAlias: ${{ secrets.ANDROID_KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          buildToolsVersion: 36.0.0
-
-      - name: 📦 Extract Signed APK Paths
-        id: extract_apks
-        run: |
-          IFS=':' read -r -a files <<< "${{ steps.sign_apks.outputs.signedFiles }}"
-          for file in "${files[@]}"; do
-            if [[ "$file" == *arm64-v8a* ]]; then
-              echo "signed_arm64=$file" >> $GITHUB_OUTPUT
-            elif [[ "$file" == *armeabi-v7a* ]]; then
-              echo "signed_armv7=$file" >> $GITHUB_OUTPUT
-            elif [[ "$file" == *x86_64* ]]; then
-              echo "signed_x86_64=$file" >> $GITHUB_OUTPUT
-            elif [[ "$file" == *x86* ]]; then
-              echo "signed_x86=$file" >> $GITHUB_OUTPUT
-            elif [[ "$file" == *universal* ]]; then
-              echo "signed_universal=$file" >> $GITHUB_OUTPUT
-            fi
-          done
-
       - name: 🚀 Upload APK - arm64-v8a
         uses: actions/upload-artifact@v4
         with:
           name: apk-arm64-v8a
-          path: ${{ steps.extract_apks.outputs.signed_arm64 }}
+          path: ${{ steps.locate_apks.outputs.arm64_apk }}
 
       - name: 🚀 Upload APK - armeabi-v7a
         uses: actions/upload-artifact@v4
         with:
           name: apk-armeabi-v7a
-          path: ${{ steps.extract_apks.outputs.signed_armv7 }}
+          path: ${{ steps.locate_apks.outputs.armv7_apk }}
 
       - name: 🚀 Upload APK - x86
         uses: actions/upload-artifact@v4
         with:
           name: apk-x86
-          path: ${{ steps.extract_apks.outputs.signed_x86 }}
+          path: ${{ steps.locate_apks.outputs.x86_apk }}
 
       - name: 🚀 Upload APK - x86_64
         uses: actions/upload-artifact@v4
         with:
           name: apk-x86_64
-          path: ${{ steps.extract_apks.outputs.signed_x86_64 }}
+          path: ${{ steps.locate_apks.outputs.x86_64_apk }}
 
       - name: 🚀 Upload APK - universal
         uses: actions/upload-artifact@v4
         with:
           name: apk-universal
-          path: ${{ steps.extract_apks.outputs.signed_universal }}
-
-      - name: 🛠️ Extract file names and version
-        id: extract_info
-        run: |
-          arm64_file=$(basename "${{ steps.extract_apks.outputs.signed_arm64 }}")
-          armv7_file=$(basename "${{ steps.extract_apks.outputs.signed_armv7 }}")
-          x86_file=$(basename "${{ steps.extract_apks.outputs.signed_x86 }}")
-          x86_64_file=$(basename "${{ steps.extract_apks.outputs.signed_x86_64 }}")
-          universal_file=$(basename "${{ steps.extract_apks.outputs.signed_universal }}")
-          version=$(echo "$arm64_file" | sed -E 's/.*-(arm64-v8a)-(v[^-]+).*-signed\.apk/\2/')
-          echo "arm64_file=$arm64_file" >> $GITHUB_OUTPUT
-          echo "armv7_file=$armv7_file" >> $GITHUB_OUTPUT
-          echo "x86_file=$x86_file" >> $GITHUB_OUTPUT
-          echo "x86_64_file=$x86_64_file" >> $GITHUB_OUTPUT
-          echo "universal_file=$universal_file" >> $GITHUB_OUTPUT
-          echo "version=$version" >> $GITHUB_OUTPUT
-
-      - name: 🎨 Generate APKS Checksum
-        run: |
-          sha256sum ${{ steps.extract_apks.outputs.signed_arm64 }} > CHECKSUMS-Sesame-arm64-v8a-${{ steps.extract_info.outputs.version }}.apk.sha256
-          sha256sum ${{ steps.extract_apks.outputs.signed_armv7 }} > CHECKSUMS-Sesame-armeabi-v7a-${{ steps.extract_info.outputs.version }}.apk.sha256
-          sha256sum ${{ steps.extract_apks.outputs.signed_x86 }} > CHECKSUMS-Sesame-x86-${{ steps.extract_info.outputs.version }}.apk.sha256
-          sha256sum ${{ steps.extract_apks.outputs.signed_x86_64 }} > CHECKSUMS-Sesame-x86_64-${{ steps.extract_info.outputs.version }}.apk.sha256
-          sha256sum ${{ steps.extract_apks.outputs.signed_universal }} > CHECKSUMS-Sesame-universal-${{ steps.extract_info.outputs.version }}.apk.sha256
-
-      - name: ✨ Create Tag from Version
-        if: startsWith(github.ref, 'refs/heads/n') && github.event_name == 'push'
-        run: |
-          VERSION_TAG="${{ steps.extract_info.outputs.version }}"
-          echo "Creating tag: $VERSION_TAG"
-          git tag "$VERSION_TAG"
-          git push origin "$VERSION_TAG"
-
-      - name: 📝 Generate Dynamic Message
-        id: commit_info
-        shell: bash
-        run: |
-          # 初始化一个临时文件名
-          MESSAGE_FILE=$(mktemp)
-
-          if [[ "${{ github.event_name }}" == "push" && -n '${{ toJSON(github.event.commits) }}' && '${{ toJSON(github.event.commits) }}' != 'null' && '${{ toJSON(github.event.commits) }}' != '[]' ]]; then
-            echo "Source: Push Event"
-            # 【修复】使用正确的 jq 语法截取 commit ID 前7个字符
-            echo '${{ toJSON(github.event.commits) }}' | jq -r '.[] | "• \(.message | split("\n")[0]) (<a href=\"\(.url)\">\(.id[0:7])</a>)"' > "$MESSAGE_FILE"
-
-          elif [[ "${{ github.event_name }}" == "pull_request" && -n '${{ toJSON(github.event.pull_request) }}' && '${{ toJSON(github.event.pull_request) }}' != 'null' ]]; then
-            echo "Source: Pull Request Event"
-            PR_TITLE="${{ github.event.pull_request.title }}"
-            PR_URL="${{ github.event.pull_request.html_url }}"
-            API_URL="${{ github.event.pull_request.commits_url }}"
-
-            # 写入 PR 标题
-            echo -e "<b>PR:</b> <a href=\"$PR_URL\">$PR_TITLE</a>\n\n<b>Commits:</b>" > "$MESSAGE_FILE"
-
-            COMMITS_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-                                -H "Accept: application/vnd.github.v3+json" \
-                                "$API_URL")
-
-            # 【修复】使用正确的 jq 语法截取 commit SHA 前7个字符
-            echo "$COMMITS_JSON" | jq -r 'if type == "array" then .[] | "• \(.commit.message | split("\n")[0]) (<a href=\"\(.html_url)\">\(.sha[0:7])</a>)" else "" end' >> "$MESSAGE_FILE"
-
-          else
-            echo "Source: Manual or unknown"
-            echo "手动触发构建" > "$MESSAGE_FILE"
-          fi
-
-          # 使用 GitHub Actions 官方推荐的多行输出语法
-          {
-            echo "message_string<<EOF"
-            cat "$MESSAGE_FILE"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-          # 清理临时文件
-          rm "$MESSAGE_FILE"
-
-      - name: 📮 Post to Telegram channel
-        if: github.ref == 'refs/heads/n'
-        env:
-          CHANNEL_ID: ${{ secrets.TG_CHAT_ID }}
-          BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          ARM64_FILE: ${{ steps.extract_apks.outputs.signed_arm64 }}
-          ARMV7_FILE: ${{ steps.extract_apks.outputs.signed_armv7 }}
-          X86_FILE: ${{ steps.extract_apks.outputs.signed_x86 }}
-          X86_64_FILE: ${{ steps.extract_apks.outputs.signed_x86_64 }}
-          UNIVERSAL_FILE: ${{ steps.extract_apks.outputs.signed_universal }}
-          COMMIT_MESSAGE: |
-            <b>🎉 New Test Version Build Success! ${{ steps.extract_info.outputs.version }}</b>
-            Target by <a href="${{ github.event.pull_request.user.html_url || format('https://github.com/{0}', github.actor) }}">${{ github.event.pull_request.user.login || github.actor }}</a>
-            <i>✨ What's Changed:</i>
-            <pre>
-            ${{ steps.commit_info.outputs.message_string  }}
-            </pre>
-            <b>- arm64-v8a:</b> 适用于64位ARM设备 (主流新手机)
-            <b>- armeabi-v7a:</b> 适用于32位ARM设备 (旧款手机)
-            <b>- x86 / x86_64:</b> 主要用于PC上的安卓模拟器
-            <b>- universal:</b> 通用版 (不确定时使用，体积较大)
-            参考配置文件：<a href="https://t.me/Sesame_TK_Channel/306">魔改版-config_v2.json</a>
-            See commit detail <a href="${{ github.event.head_commit.url }}">here</a>
-        run: |
-          ESCAPED=$(python3 -c '
-          import os, json
-          msg = os.environ["COMMIT_MESSAGE"]
-          print(json.dumps(msg))
-          ')
-          curl -v "https://api.telegram.org/bot${BOT_TOKEN}/sendMediaGroup" \
-          -F "chat_id=${CHANNEL_ID}" \
-          -F "media=[{\"type\":\"document\",\"media\":\"attach://arm64.apk\",\"parse_mode\":\"HTML\",\"caption\":${ESCAPED}},{\"type\":\"document\",\"media\":\"attach://armv7.apk\"},{\"type\":\"document\",\"media\":\"attach://x86.apk\"},{\"type\":\"document\",\"media\":\"attach://x86_64.apk\"},{\"type\":\"document\",\"media\":\"attach://universal.apk\"}]" \
-          -F "arm64.apk=@${ARM64_FILE}" \
-          -F "armv7.apk=@${ARMV7_FILE}" \
-          -F "x86.apk=@${X86_FILE}" \
-          -F "x86_64.apk=@${X86_64_FILE}" \
-          -F "universal.apk=@${UNIVERSAL_FILE}"
-
-      - name: 🚀 Upload Assets to Source Release
-        if: github.event_name == 'release' && github.event.action == 'published'
-        uses: softprops/action-gh-release@v2
-        with:
-          name: ${{ github.event.release.tag_name || steps.extract_info.outputs.version }}
-          files: |
-            ${{ steps.extract_apks.outputs.signed_arm64 }}
-            ${{ steps.extract_apks.outputs.signed_armv7 }}
-            ${{ steps.extract_apks.outputs.signed_x86 }}
-            ${{ steps.extract_apks.outputs.signed_x86_64 }}
-            ${{ steps.extract_apks.outputs.signed_universal }}
-            CHECKSUMS-Sesame-arm64-v8a-${{ steps.extract_info.outputs.version }}.apk.sha256
-            CHECKSUMS-Sesame-armeabi-v7a-${{ steps.extract_info.outputs.version }}.apk.sha256
-            CHECKSUMS-Sesame-x86-${{ steps.extract_info.outputs.version }}.apk.sha256
-            CHECKSUMS-Sesame-x86_64-${{ steps.extract_info.outputs.version }}.apk.sha256
-            CHECKSUMS-Sesame-universal-${{ steps.extract_info.outputs.version }}.apk.sha256
-          tag_name: ${{ steps.extract_info.outputs.version}}
-          draft: false
-          append_body: true
-          generate_release_notes: true
-          body: |
-            ## ✨What's Changed
-
-            ${{ steps.commit_info.outputs.message_string }}
-
-            > ## 下载说明
-            <b>- arm64-v8a:</b> 适用于64位ARM设备 (主流新手机)
-            <b>- armeabi-v7a:</b> 适用于32位ARM设备 (旧款手机)
-            <b>- x86 / x86_64:</b> 主要用于PC上的安卓模拟器
-            <b>- universal:</b> 通用版 (不确定时使用，体积较大)
-            >
-            > **如果不确定，请下载 `universal` 版本。**
+          path: ${{ steps.locate_apks.outputs.universal_apk }}
